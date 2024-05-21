@@ -5,7 +5,7 @@ namespace MVP_Server.DAL
 {
     public class DataContext : DbContext
     {
-        private const string _connectionString = @"Data Source='E:\DEV\ESP-SERVER-Proj\MVP_Server\DATABASE\DB'";
+        private const string _connectionString = @"Data Source='.\DATABASE\DB'";
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
