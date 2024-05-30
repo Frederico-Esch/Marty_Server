@@ -28,7 +28,6 @@ namespace MVP_Server
             }
 
             // Configure the HTTP request pipeline.
-
             //app.UseHttpsRedirection();
             //app.UseAuthorization();
 

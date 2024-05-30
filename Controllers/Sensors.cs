@@ -40,8 +40,10 @@ namespace MVP_Server.Controllers
         }
 
         [HttpPost("CreateData")]
-        public ActionResult CreateData([FromBody] MinimumSensorData data)
+        [Obsolete("Use SendData endpoint")]
+        public ActionResult CreateData([FromBody] MinimumSensorData data) //nem funciona mais pq o input formatter só funciona com listas
         {
+            return StatusCode(500, "Deprecated endpoint, use sendData");
             var lastReading = _dataContext.Readings.OrderBy(r => r.Date).LastOrDefault();
             if (lastReading == null) return StatusCode(400, -1);
 
@@ -66,16 +68,26 @@ namespace MVP_Server.Controllers
             var lastReading = _dataContext.Readings.OrderBy(r => r.Date).LastOrDefault();
             if (lastReading == null) return StatusCode(400, -1);
 
-            foreach (var data in sensorData)
+            var failedResults = sensorData.Select(data => new
             {
-                _dataContext
+                Id = data.IdSensor,
+                Result = _dataContext
                     .SensorData
                     .Add(new SensorDataEntity
                     {
                         IdSensor = data.IdSensor,
                         IdReading = lastReading.Id,
                         Data = data.Data
-                    });
+                    })
+            })
+            .Where(result => result.Result == null)
+            .Select(fr => fr.Id)
+            .ToList();
+
+            _logger.LogInformation($"Failed Inserts {failedResults.Count}");
+            if (failedResults.Count > 0) {
+                _logger.LogError(failedResults.ToString());
+                return StatusCode(450, failedResults);
             }
             _dataContext.SaveChanges();
 
@@ -110,50 +122,15 @@ namespace MVP_Server.Controllers
                             }).ToList();
 
 
+            _logger.LogInformation($"GetDataSensor requested for {ids}: found {result.Count}");
             return result;
         }
         [HttpGet("GetAllSensor")]
-        public List<string> GetAllSensor()
+        public List<MinimalSensor> GetAllSensor()
         {
-            var result = _dataContext.Sensors.Select(sensor => sensor.Name).ToList();
-
-
+            var result = _dataContext.Sensors.Select(sensor => new MinimalSensor(sensor.Id, sensor.Name)).ToList(); 
 
             return result;
-        }
-        [HttpGet("GetDateSensor")]
-        public List<CompleteData> GetDateSensor(DateTime start, DateTime end)
-        {
-            var result = _dataContext.SensorData.Include(data => data.Reading).Where(date => date.Reading.Date > start && date.Reading.Date < end )
-                .Include(data => data.Sensor)
-                            .Select(data => new CompleteData
-                            {
-                                Name = data.Sensor.Name,
-                                Data = data.Data,
-                                Date = data.Reading.Date
-                            }).ToList();
-
-
-            return result;
-        }
-        [HttpGet("GetMediaSensor")]
-        public CompleteMedia GetMediaSensor(DateTime start, DateTime end, int id)
-        {
-            var result = _dataContext.SensorData.Where(data => data.IdSensor == id)
-                .Include(data => data.Reading).Where(date => date.Reading.Date > start && date.Reading.Date < end)
-                .Include(data => data.Sensor).ToList();//Aggregate(new CompleteMedia { Media = 0, Begin = start, End = end}, (a,b) => a + b.Data )
-
-            var media = result.Aggregate(new CompleteMedia { Media = 0, Begin = start, End = end }, (a, b) =>
-            {
-                a.Media += b.Data;
-                a.Begin = a.Begin > b.Reading.Date ? a.Begin : b.Reading.Date;
-                a.End = a.End < b.Reading.Date ? a.End : b.Reading.Date;
-                return a;
-            });
-            media.Media /= result.Count;
-
-
-            return media;
         }
         #endregion
     }
@@ -162,16 +139,8 @@ namespace MVP_Server.Controllers
     {
         public string Name { get; set;}
         public DateTime Date { get; set; }
-        public Double Data { get; set; }
+        public double Data { get; set; }
     }
-    public struct CompleteMedia
-    {
-        public string Name { get; set; }
-        public DateTime Begin { get; set; }
-        public DateTime End { get; set; }
-        public double Media { get; set; }
-    }
-
     public record MinimalSensor (
         int Id,
         string Name
