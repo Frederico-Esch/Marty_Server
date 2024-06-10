@@ -132,6 +132,25 @@ namespace MVP_Server.Controllers
 
             return result;
         }
+        [HttpGet("GetByDate")]
+        public List<CompleteData> GetByDate(DateTime date)
+        {
+            var result = _dataContext.Readings
+                .Where(reading => date.Day == reading.Date.Day && date.Month == reading.Date.Month && date.Year == reading.Date.Year)
+                .Include(reading => reading.SensorData)
+                .ThenInclude(SensorData => SensorData.Sensor)
+                .ToList()
+                .SelectMany(reading => reading.SensorData
+                    .Select(sensorData => new CompleteData
+                    {
+                        Name = sensorData.Sensor.Name,
+                        Data = sensorData.Data,
+                        Date = reading.Date
+                    })).ToList();
+
+            return result;
+        }
+
         #endregion
     }
 
