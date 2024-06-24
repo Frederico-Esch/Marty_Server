@@ -57,6 +57,11 @@ namespace MVP_Server.InputFormatter
                 return InputFormatterResult.Success(minimumSensorData);
             }
 
+            var httpContext = context.HttpContext;
+            httpContext.Response.StatusCode = 400;
+            await httpContext.Response.WriteAsJsonAsync(new { Error = "Wrong Content-Type" });
+            await httpContext.Response.CompleteAsync();
+
             return InputFormatterResult.Failure();
         }
     }

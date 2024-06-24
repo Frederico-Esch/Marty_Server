@@ -6,6 +6,7 @@ using MVP_Server.DAL;
 using MVP_Server.InputFormatter;
 using MVP_Server.Model;
 using MVP_Server.Model.ENTITY;
+using System.Linq.Expressions;
 
 namespace MVP_Server.Controllers
 {
@@ -23,19 +24,45 @@ namespace MVP_Server.Controllers
 
         #region ESP
         [HttpGet("SensorId")]
-        public List<MinimalSensor> GetSensorId([FromQuery] string name) =>
-            _dataContext.Sensors.Where(sensor => sensor.Name.ToLower().Contains(name.ToLower())).Select(s => new MinimalSensor(s.Id, s.Name)).ToList();
+        public List<MinimalSensor> GetSensorId([FromQuery] string name)
+        {
+
+            _logger.LogInformation("Searching for sensor with name {Name}", name);
+            try //hidden control flow
+            {
+               return _dataContext.Sensors
+                    .Where(sensor => sensor.Name.ToLower().Contains(name.ToLower()))
+                    .Select(s => new MinimalSensor(s.Id, s.Name))
+                    .ToList();
+            }
+            catch(Exception e) {
+                _logger.LogError("Error while finding sensor {ErrorMessage}", e.Message);
+                return [];
+            }
+
+        }
 
         [HttpPost("CreateReading")]
         public ActionResult CreateReading()
         {
-            var result = _dataContext
-                            .Readings
-                            .Add(new ReadingEntity { Date = DateTime.Now });
-            _dataContext.SaveChanges();
+            try
+            {
+                var result = _dataContext
+                                .Readings
+                                .Add(new ReadingEntity { Date = DateTime.Now });
+                _dataContext.SaveChanges();
+                if (result != null) {
+                    _logger.LogInformation("Reading created, {ID} - {Date}", result.Entity.Id, result.Entity.Date);
+                    return Ok(result.Entity.Id);
+                }
+            }
+            catch (Exception e)
+            {
+                _logger.LogError("Error while creating reading {ErrorMessage}", e.Message);
+                return StatusCode(400, -1);
+            }
 
-            if (result != null) { return Ok(result.Entity.Id); }
-
+            _logger.LogError($"Unknown error while creating reading");
             return StatusCode(400, -1);
         }
 
@@ -43,53 +70,74 @@ namespace MVP_Server.Controllers
         [Obsolete("Use SendData endpoint")]
         public ActionResult CreateData([FromBody] MinimumSensorData data) //nem funciona mais pq o input formatter só funciona com listas
         {
+            _logger.LogError("Deprecated endpoint acessed");
             return StatusCode(500, "Deprecated endpoint, use sendData");
-            var lastReading = _dataContext.Readings.OrderBy(r => r.Date).LastOrDefault();
-            if (lastReading == null) return StatusCode(400, -1);
+            //var lastReading = _dataContext.Readings.OrderBy(r => r.Date).LastOrDefault();
+            //if (lastReading == null) return StatusCode(400, -1);
 
-            var result = _dataContext
-                            .SensorData
-                            .Add(new SensorDataEntity
-                            {
-                                IdSensor = data.IdSensor,
-                                IdReading = lastReading.Id,
-                                Data = data.Data
-                            });
-            _dataContext.SaveChanges();
+            //var result = _dataContext
+            //                .SensorData
+            //                .Add(new SensorDataEntity
+            //                {
+            //                    IdSensor = data.IdSensor,
+            //                    IdReading = lastReading.Id,
+            //                    Data = data.Data
+            //                });
+            //_dataContext.SaveChanges();
+            //if (result == null) { return StatusCode(400, -1); };
 
-            if (result == null) { return StatusCode(400, -1); };
-
-            return Ok(result.Entity.Id);
+            //return Ok(result.Entity.Id);
         }
 
         [HttpPost("SendData")]
         public ActionResult SendData([FromBody] List<MinimumSensorData> sensorData)
         {
-            var lastReading = _dataContext.Readings.OrderBy(r => r.Date).LastOrDefault();
-            if (lastReading == null) return StatusCode(400, -1);
-
-            var failedResults = sensorData.Select(data => new
+            ReadingEntity? lastReading;
+            try
             {
-                Id = data.IdSensor,
-                Result = _dataContext
-                    .SensorData
-                    .Add(new SensorDataEntity
-                    {
-                        IdSensor = data.IdSensor,
-                        IdReading = lastReading.Id,
-                        Data = data.Data
-                    })
-            })
-            .Where(result => result.Result == null)
-            .Select(fr => fr.Id)
-            .ToList();
-
-            _logger.LogInformation($"Failed Inserts {failedResults.Count}");
-            if (failedResults.Count > 0) {
-                _logger.LogError(failedResults.ToString());
-                return StatusCode(450, failedResults);
+                lastReading = _dataContext.Readings.OrderBy(r => r.Date).LastOrDefault();
+                if (lastReading == null)
+                {
+                    _logger.LogError("No last reading found");
+                    return StatusCode(400, -1);
+                }
             }
-            _dataContext.SaveChanges();
+            catch(Exception e)
+            {
+                _logger.LogError("Error while getting last reading {ErrorMessage}", e.Message);
+                return StatusCode(400, -1);
+            }
+
+            try
+            {
+                var failedResults = sensorData.Select(data => new
+                {
+                    Id = data.IdSensor,
+                    Result = _dataContext
+                        .SensorData
+                        .Add(new SensorDataEntity
+                        {
+                            IdSensor = data.IdSensor,
+                            IdReading = lastReading.Id,
+                            Data = data.Data
+                        })
+                })
+                .Where(result => result.Result == null)
+                .Select(fr => fr.Id)
+                .ToList();
+
+                if (failedResults.Count > 0) {
+                    _logger.LogError("Failed Inserts {FailCount}\n{FailedResults}", failedResults.Count, failedResults.ToString());
+                    return StatusCode(450, failedResults);
+                }
+                _dataContext.SaveChanges();
+            }
+            catch (Exception e)
+            {
+                _logger.LogError("Error while inserting sensor data {ErrorMessage}", e.Message);
+                return StatusCode(400, -1);
+            }
+            _logger.LogInformation("Insert and commit successful");
 
             return Ok();
         }
@@ -99,38 +147,64 @@ namespace MVP_Server.Controllers
         [HttpGet("GetAllData")]
         public List<CompleteData> GetAllData()
         {
-            var result = _dataContext.SensorData.Include(data => data.Sensor).Include(data => data.Reading)
-                            .Select(data => new CompleteData { 
-                                Name = data.Sensor.Name,
-                                Data = data.Data,
-                                Date = data.Reading.Date
-                            }).ToList();
-
-
-            return result;
+            _logger.LogInformation("Request for all data");
+            try
+            {
+                var result = _dataContext.SensorData.Include(data => data.Sensor).Include(data => data.Reading)
+                                .Select(data => new CompleteData { 
+                                    Name = data.Sensor.Name,
+                                    Data = data.Data,
+                                    Date = data.Reading.Date
+                                }).ToList();
+                return result;
+            }
+            catch(Exception e)
+            {
+                _logger.LogError("Error while getting all data {ErrorMessage}", e.Message);
+                return [];
+            }
         }
-        [HttpGet("GetDataSensor")]
-        public List<CompleteData> GetDataSensor(List<int> ids)
+
+        [HttpGet("GetSensorData")]
+        public List<CompleteData> GetSensorData(List<int> ids)
         {
-            var result = _dataContext.SensorData.Where(data => ids.Contains(data.IdSensor))
-                .Include(data => data.Sensor).Include(data => data.Reading)
-                            .Select(data => new CompleteData
-                            {
-                                Name = data.Sensor.Name,
-                                Data = data.Data,
-                                Date = data.Reading.Date
-                            }).ToList();
+            _logger.LogInformation("GetSensorData requested for {Ids}", ids);
+            try
+            {
+                var result = _dataContext.SensorData.Where(data => ids.Contains(data.IdSensor))
+                    .Include(data => data.Sensor).Include(data => data.Reading)
+                                .Select(data => new CompleteData
+                                {
+                                    Name = data.Sensor.Name,
+                                    Data = data.Data,
+                                    Date = data.Reading.Date
+                                }).ToList();
 
 
-            _logger.LogInformation($"GetDataSensor requested for {ids}: found {result.Count}");
-            return result;
+                _logger.LogInformation("Found {results}", result);
+                return result;
+            }
+            catch(Exception e)
+            {
+                _logger.LogError("Error while getting sensor data {ErrorMessage}", e.Message);
+                return [];
+            }
         }
+
         [HttpGet("GetAllSensor")]
         public List<MinimalSensor> GetAllSensor()
         {
-            var result = _dataContext.Sensors.Select(sensor => new MinimalSensor(sensor.Id, sensor.Name)).ToList(); 
+            try
+            {
+                _logger.LogInformation("Request for all sensors");
+                return _dataContext.Sensors.Select(sensor => new MinimalSensor(sensor.Id, sensor.Name)).ToList();
+            }
+            catch(Exception e)
+            {
+                _logger.LogError("Error while retrieving all sensors {ErrorMessage}", e.Message);
+                return [];
+            }
 
-            return result;
         }
         [HttpGet("GetByDate")]
         public List<CompleteData> GetByDate(DateTime date)
