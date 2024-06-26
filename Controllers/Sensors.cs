@@ -209,6 +209,7 @@ namespace MVP_Server.Controllers
         [HttpGet("GetByDate")]
         public List<CompleteData> GetByDate(DateTime date)
         {
+            _logger.LogInformation("Get By Date");
             var result = _dataContext.Readings
                 .Where(reading => date.Day == reading.Date.Day && date.Month == reading.Date.Month && date.Year == reading.Date.Year)
                 .Include(reading => reading.SensorData)
@@ -225,9 +226,50 @@ namespace MVP_Server.Controllers
             return result;
         }
 
+        [HttpGet("GetGroupedDataByDate")]
+        
+        public ActionResult<List<DateGrouped<SensorData>>> GetGroupedDataByDate()
+        {
+            _logger.LogInformation("Get Grouped Date");
+
+            try
+            {
+                var result = _dataContext.Readings
+                    .Include(reading => reading.SensorData)
+                    .ThenInclude(sensorData => sensorData.Sensor)
+                    .GroupBy(reading => reading.Date)
+                    .Select(reading => new DateGrouped<SensorData>
+                    {
+                        Date = reading.Key,
+                        Datas = reading.SelectMany(r => r.SensorData).Select(sensorData => new SensorData
+                        {
+                            Name = sensorData.Sensor.Name,
+                            Data = sensorData.Data,
+                        }).ToList(),
+                    }).ToList();
+
+                return result;
+            }
+            catch(Exception ex)
+            {
+                _logger.LogError("Error retrieving data {ErrorMessage}", ex.Message);
+                return StatusCode(400, "Error retrieving data");
+            }
+        }
+
         #endregion
     }
 
+    public struct DateGrouped<T>
+    {
+        public DateTime Date { get; set; }
+        public List<T> Datas { get; set; }
+    }
+    public struct SensorData
+    {
+        public string Name { get; set; }
+        public double Data { get; set; }
+    }
     public struct CompleteData
     {
         public string Name { get; set;}
