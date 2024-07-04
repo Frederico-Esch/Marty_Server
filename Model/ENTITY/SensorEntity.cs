@@ -7,6 +7,7 @@ namespace MVP_Server.Model.ENTITY
     {
         public int Id { get; set; }
         public string Name { get; set; }
+        public string MeasurementUnit { get;set; }
 
         public virtual ICollection<SensorDataEntity> SensorData { get; set; }
     }
