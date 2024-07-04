@@ -23,25 +23,6 @@ namespace MVP_Server.Controllers
         }
 
         #region ESP
-        [HttpGet("SensorId")]
-        public List<MinimalSensor> GetSensorId([FromQuery] string name)
-        {
-
-            _logger.LogInformation("Searching for sensor with name {Name}", name);
-            try //hidden control flow
-            {
-               return _dataContext.Sensors
-                    .Where(sensor => sensor.Name.ToLower().Contains(name.ToLower()))
-                    .Select(s => new MinimalSensor(s.Id, s.Name))
-                    .ToList();
-            }
-            catch(Exception e) {
-                _logger.LogError("Error while finding sensor {ErrorMessage}", e.Message);
-                return [];
-            }
-
-        }
-
         [HttpPost("CreateReading")]
         public ActionResult CreateReading()
         {
@@ -144,6 +125,25 @@ namespace MVP_Server.Controllers
         #endregion
 
         #region Front
+        [HttpGet("SensorId")]
+        public List<MinimalSensor> GetSensorId([FromQuery] string name)
+        {
+
+            _logger.LogInformation("Searching for sensor with name {Name}", name);
+            try //hidden control flow
+            {
+               return _dataContext.Sensors
+                    .Where(sensor => sensor.Name.ToLower().Contains(name.ToLower()))
+                    .Select(s => new MinimalSensor(s.Id, s.Name, s.MeasurementUnit))
+                    .ToList();
+            }
+            catch(Exception e) {
+                _logger.LogError("Error while finding sensor {ErrorMessage}", e.Message);
+                return [];
+            }
+
+        }
+
         [HttpGet("GetAllData")]
         public List<CompleteData> GetAllData()
         {
@@ -153,6 +153,7 @@ namespace MVP_Server.Controllers
                 var result = _dataContext.SensorData.Include(data => data.Sensor).Include(data => data.Reading)
                                 .Select(data => new CompleteData { 
                                     Name = data.Sensor.Name,
+                                    MeasurementUnit = data.Sensor.MeasurementUnit,
                                     Data = data.Data,
                                     Date = data.Reading.Date
                                 }).ToList();
@@ -176,6 +177,7 @@ namespace MVP_Server.Controllers
                                 .Select(data => new CompleteData
                                 {
                                     Name = data.Sensor.Name,
+                                    MeasurementUnit = data.Sensor.MeasurementUnit,
                                     Data = data.Data,
                                     Date = data.Reading.Date
                                 }).ToList();
@@ -197,7 +199,7 @@ namespace MVP_Server.Controllers
             try
             {
                 _logger.LogInformation("Request for all sensors");
-                return _dataContext.Sensors.Select(sensor => new MinimalSensor(sensor.Id, sensor.Name)).ToList();
+                return _dataContext.Sensors.Select(sensor => new MinimalSensor(sensor.Id, sensor.Name, sensor.MeasurementUnit)).ToList();
             }
             catch(Exception e)
             {
@@ -219,6 +221,7 @@ namespace MVP_Server.Controllers
                     .Select(sensorData => new CompleteData
                     {
                         Name = sensorData.Sensor.Name,
+                        MeasurementUnit = sensorData.Sensor.MeasurementUnit,
                         Data = sensorData.Data,
                         Date = reading.Date
                     })).ToList();
@@ -244,6 +247,7 @@ namespace MVP_Server.Controllers
                         Datas = reading.SelectMany(r => r.SensorData).Select(sensorData => new SensorData
                         {
                             Name = sensorData.Sensor.Name,
+                            MeasurementUnit = sensorData.Sensor.MeasurementUnit,
                             Data = sensorData.Data,
                         }).ToList(),
                     }).ToList();
@@ -269,15 +273,18 @@ namespace MVP_Server.Controllers
     {
         public string Name { get; set; }
         public double Data { get; set; }
+        public string MeasurementUnit { get; set; }
     }
     public struct CompleteData
     {
         public string Name { get; set;}
         public DateTime Date { get; set; }
         public double Data { get; set; }
+        public string MeasurementUnit { get; set; }
     }
     public record MinimalSensor (
         int Id,
-        string Name
+        string Name,
+        string MeasurementUnit
     );
 }
